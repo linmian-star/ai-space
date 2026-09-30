@@ -29,7 +29,7 @@ export default function Sidebar() {
               className={
                 'rounded-md px-3 py-2 text-sm transition-colors ' +
                 (active
-                  ? 'bg-zinc-200 font-semibold text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50'
+                  ? 'bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
                   : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50')
               }
             >

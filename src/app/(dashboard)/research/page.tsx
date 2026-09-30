@@ -3,6 +3,7 @@
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
 import { useState, type ReactNode } from 'react';
+import MarkdownView from '../_components/MarkdownView';
 
 const RESEARCH_API = '/api/research';
 
@@ -113,7 +114,7 @@ export default function ResearchPage() {
           <button
             type="submit"
             disabled={busy || input.trim().length === 0}
-            className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
+            className="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-indigo-500 dark:hover:bg-indigo-400"
           >
             {busy ? '研究中...' : '开始研究'}
           </button>
@@ -130,7 +131,7 @@ export default function ResearchPage() {
         {messages.map(message => (
           <div key={message.id} className="flex flex-col gap-2">
             {message.role === 'user' && (
-              <div className="self-end rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white dark:bg-zinc-50 dark:text-zinc-900">
+              <div className="self-end rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white">
                 {message.parts.map((part, i) =>
                   part.type === 'text' ? <span key={i}>{part.text}</span> : null,
                 )}
@@ -143,9 +144,9 @@ export default function ResearchPage() {
                     return part.text.trim() === '' ? null : (
                       <div
                         key={`${message.id}-${i}`}
-                        className="whitespace-pre-wrap rounded-md border border-zinc-200 bg-white p-4 text-sm leading-6 text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+                        className="rounded-md border border-zinc-200 bg-white p-4 text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
                       >
-                        {part.text}
+                        <MarkdownView>{part.text}</MarkdownView>
                       </div>
                     );
                   case 'dynamic-tool':

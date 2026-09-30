@@ -39,9 +39,9 @@ export default function Home() {
             <Link
               key={m.href}
               href={m.href}
-              className="group block rounded-lg border border-zinc-200 bg-white p-5 transition-colors hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-600 dark:hover:bg-zinc-900"
+              className="group block rounded-lg border border-zinc-200 bg-white p-5 transition-colors hover:border-indigo-400 hover:bg-indigo-50/50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-indigo-600 dark:hover:bg-zinc-900"
             >
-              <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+              <h2 className="text-base font-semibold text-zinc-900 group-hover:text-indigo-700 dark:text-zinc-50 dark:group-hover:text-indigo-300">
                 {m.title}
               </h2>
               <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
