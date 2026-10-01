@@ -15,8 +15,13 @@ import type { EmbeddedChunk, RetrievedChunk } from './research-state';
 // 与 embedding.ts 中 nvidia/nemotron-3-embed-1b:free 的实际维度保持一致。
 export const EMBEDDING_DIM = 2048;
 
-// LanceDB 数据文件目录（项目根/.data/lancedb）。
-const DB_DIR = path.join(process.cwd(), '.data', 'lancedb');
+// LanceDB 数据文件目录。
+// 本地开发：项目根/.data/lancedb。
+// Vercel Serverless：函数实例的文件系统只读，只有 /tmp 可写，故落到 /tmp 下。
+// 这与请求级隔离语义天然吻合：/tmp 本就是实例级临时目录，随实例回收而清理。
+const DB_DIR = process.env.VERCEL
+  ? path.join('/tmp', '.data', 'lancedb')
+  : path.join(process.cwd(), '.data', 'lancedb');
 
 // VectorStore 最小抽象：只暴露 RAG 当前需要的两个能力 + 资源释放。
 // 未来如需替换为 Qdrant / pgvector，只需提供同接口的新实现。
