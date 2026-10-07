@@ -1,9 +1,9 @@
 'use client';
 
-import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
 import { useState, type ReactNode } from 'react';
 import MarkdownView from '../_components/MarkdownView';
+import { usePersistentChat } from '../_hooks/usePersistentChat';
 
 const RESEARCH_API = '/api/research';
 
@@ -23,6 +23,13 @@ function describeInput(toolName: string, input: unknown): string {
 
 // 把工具结果渲染成一行摘要（完整内容太长，只给概览）
 function describeOutput(toolName: string, output: unknown): string {
+  // 从 localStorage 恢复的历史：工具结果已瘦身成归档文本，直接展示
+  if (output && typeof output === 'object') {
+    const archived = output as { __archived?: unknown; text?: unknown };
+    if (archived.__archived === true && typeof archived.text === 'string') {
+      return archived.text;
+    }
+  }
   if (!output || typeof output !== 'object') return '完成';
   const obj = output as Record<string, unknown>;
   if (toolName === 'search') {
@@ -77,9 +84,11 @@ function ToolPartView({ part }: { part: Extract<UIMessage['parts'][number], { ty
 
 export default function ResearchPage() {
   const [input, setInput] = useState('');
-  const { messages, sendMessage, status, error } = useChat({
-    transport: new DefaultChatTransport({ api: RESEARCH_API }),
-  });
+  const { messages, sendMessage, status, error, hydrated, clearHistory } =
+    usePersistentChat({
+      storageKey: 'research',
+      transport: new DefaultChatTransport({ api: RESEARCH_API }),
+    });
 
   const busy = status === 'submitted' || status === 'streaming';
 
@@ -110,7 +119,7 @@ export default function ResearchPage() {
           value={input}
           onChange={e => setInput(e.currentTarget.value)}
         />
-        <div>
+        <div className="flex items-center gap-3">
           <button
             type="submit"
             disabled={busy || input.trim().length === 0}
@@ -118,6 +127,15 @@ export default function ResearchPage() {
           >
             {busy ? '研究中...' : '开始研究'}
           </button>
+          {hydrated && messages.length > 0 && (
+            <button
+              type="button"
+              onClick={clearHistory}
+              className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50"
+            >
+              清空对话
+            </button>
+          )}
         </div>
       </form>
 
@@ -127,8 +145,11 @@ export default function ResearchPage() {
         </div>
       )}
 
-      <div className="flex flex-col gap-4">
-        {messages.map(message => (
+      {!hydrated ? (
+        <div className="text-sm text-zinc-400 dark:text-zinc-500">正在恢复历史…</div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {messages.map(message => (
           <div key={message.id} className="flex flex-col gap-2">
             {message.role === 'user' && (
               <div className="self-end rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white">
@@ -158,7 +179,8 @@ export default function ResearchPage() {
               })}
           </div>
         ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

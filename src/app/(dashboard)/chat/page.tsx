@@ -1,12 +1,13 @@
 'use client';
 
-import { useChat } from '@ai-sdk/react';
 import { useState } from 'react';
 import MarkdownView from '../_components/MarkdownView';
+import { usePersistentChat } from '../_hooks/usePersistentChat';
 
 export default function ChatPage() {
   const [input, setInput] = useState('');
-  const { messages, sendMessage, status } = useChat();
+  const { messages, sendMessage, status, hydrated, clearHistory } =
+    usePersistentChat({ storageKey: 'chat' });
   const busy = status === 'submitted' || status === 'streaming';
 
   return (
@@ -36,7 +37,7 @@ export default function ChatPage() {
           value={input}
           onChange={e => setInput(e.currentTarget.value)}
         />
-        <div>
+        <div className="flex items-center gap-3">
           <button
             type="submit"
             disabled={busy || input.trim().length === 0}
@@ -44,11 +45,23 @@ export default function ChatPage() {
           >
             {busy ? '发送中...' : '发送'}
           </button>
+          {hydrated && messages.length > 0 && (
+            <button
+              type="button"
+              onClick={clearHistory}
+              className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50"
+            >
+              清空对话
+            </button>
+          )}
         </div>
       </form>
 
-      <div className="flex flex-col gap-4">
-        {messages.map(message => (
+      {!hydrated ? (
+        <div className="text-sm text-zinc-400 dark:text-zinc-500">正在恢复历史…</div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {messages.map(message => (
           <div key={message.id} className="flex flex-col gap-2">
             {message.role === 'user' && (
               <div className="self-end rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white">
@@ -75,7 +88,8 @@ export default function ChatPage() {
               })}
           </div>
         ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

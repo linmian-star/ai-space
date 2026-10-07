@@ -1,17 +1,19 @@
 'use client';
 
-import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { useState } from 'react';
 import MarkdownView from '../_components/MarkdownView';
+import { usePersistentChat } from '../_hooks/usePersistentChat';
 
 const TASK_API = '/api/tasks/summarize';
 
 export default function TasksPage() {
   const [input, setInput] = useState('');
-  const { messages, sendMessage, setMessages, status, error } = useChat({
-    transport: new DefaultChatTransport({ api: TASK_API }),
-  });
+  const { messages, sendMessage, status, error, hydrated, clearHistory } =
+    usePersistentChat({
+      storageKey: 'tasks',
+      transport: new DefaultChatTransport({ api: TASK_API }),
+    });
 
   const busy = status === 'submitted' || status === 'streaming';
   const results = messages.filter(m => m.role === 'assistant');
@@ -51,10 +53,10 @@ export default function TasksPage() {
           >
             {busy ? '生成中...' : '生成摘要'}
           </button>
-          {results.length > 0 && (
+          {hydrated && results.length > 0 && (
             <button
               type="button"
-              onClick={() => setMessages([])}
+              onClick={clearHistory}
               className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50"
             >
               清空结果
@@ -69,21 +71,25 @@ export default function TasksPage() {
         </div>
       )}
 
-      <div className="flex flex-col gap-3">
-        {results.map(message => (
-          <div
-            key={message.id}
-            className="rounded-md border border-zinc-200 bg-white p-4 text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
-          >
-            <MarkdownView>
-              {message.parts
-                .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-                .map(p => p.text)
-                .join('')}
-            </MarkdownView>
-          </div>
-        ))}
-      </div>
+      {!hydrated ? (
+        <div className="text-sm text-zinc-400 dark:text-zinc-500">正在恢复历史…</div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {results.map(message => (
+            <div
+              key={message.id}
+              className="rounded-md border border-zinc-200 bg-white p-4 text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+            >
+              <MarkdownView>
+                {message.parts
+                  .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+                  .map(p => p.text)
+                  .join('')}
+              </MarkdownView>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
