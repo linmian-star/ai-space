@@ -32,6 +32,7 @@ const RESEARCH_SYSTEM_PROMPT = `你是一个研究助手。请按以下步骤工
 - sourceUrls 必须来自实际成功 fetch_page 的页面 URL
 - 如果信息不足，可以继续搜索和阅读
 - 调用 finish_research 之后不要再调用任何工具
+- 正文中不要输出搜索计划、过渡性说明或自言自语（例如 "Now let me search..."），需要工具时直接调用
 - 搜索最多 3 次，页面抓取最多 5 次（由代码强制执行）`;
 
 // Synthesis Stage：不包含任何工具，仅根据 Research 阶段收集的资料生成最终回答。

@@ -1,12 +1,10 @@
 import { embed } from 'ai';
-import { openrouter } from '@openrouter/ai-sdk-provider';
+import { zhipu } from './models';
 import type { EmbeddedChunk, ResearchChunk } from './research-state';
 
-// Embedding 模型：与 chat 模型共享同一 OPENROUTER_API_KEY，但使用不同的模型。
-// nvidia/nemotron-3-embed-1b:free：OpenRouter 免费 embedding 模型。
-export const embeddingModel = openrouter.textEmbeddingModel(
-  'nvidia/nemotron-3-embed-1b:free',
-);
+// Embedding 模型：与 chat 复用同一个智谱 provider（同一把 ZHIPU_API_KEY）。
+// embedding-3 默认输出 2048 维，与 vector-store 的 EMBEDDING_DIM 一致，无需额外参数。
+export const embeddingModel = zhipu.textEmbeddingModel('embedding-3');
 
 // 可注入的 embedding 函数类型，便于测试时用 mock 替换真实网络调用。
 export type EmbedFn = (text: string) => Promise<number[]>;

@@ -1,12 +1,32 @@
+'use client';
+
+import { useTheme } from "next-themes";
+import { Moon, Sun } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+
 export default function TopBar() {
+  const { theme, setTheme } = useTheme();
+
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 dark:border-zinc-800 dark:bg-zinc-950">
-      <span className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6">
+      <span className="text-sm font-semibold tracking-tight text-foreground">
         AI Workbench
       </span>
-      <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
-        Model: minimax/m3
-      </span>
+      <div className="flex items-center gap-2">
+        <Badge variant="secondary" className="text-xs">
+          Model: glm-4.6 · 智谱
+        </Badge>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          aria-label="切换主题"
+        >
+          <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+          <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+        </Button>
+      </div>
     </header>
   );
 }
