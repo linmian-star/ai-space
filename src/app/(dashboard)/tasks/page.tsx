@@ -1,22 +1,45 @@
 'use client';
 
 import { DefaultChatTransport } from 'ai';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import MarkdownView from '../_components/MarkdownView';
 import { usePersistentChat } from '../_hooks/usePersistentChat';
+import { useUrlSessionId } from '../_hooks/useUrlSessionId';
 
 const TASK_API = '/api/tasks/summarize';
 
 export default function TasksPage() {
   const [input, setInput] = useState('');
-  const { messages, sendMessage, status, error, hydrated, clearHistory } =
+  const router = useRouter();
+  const activeSessionId = useUrlSessionId();
+  const { messages, sendMessage, status, error, hydrated, startNewSession } =
     usePersistentChat({
       storageKey: 'tasks',
+      activeSessionId: activeSessionId,
       transport: new DefaultChatTransport({ api: TASK_API }),
     });
 
   const busy = status === 'submitted' || status === 'streaming';
   const results = messages.filter(m => m.role === 'assistant');
+
+  // 监听 Sidebar 点「+ 新建对话」的 clearsession 事件
+  useEffect(() => {
+    const handler = () => startNewSession();
+    window.addEventListener('clearsession', handler);
+    return () => window.removeEventListener('clearsession', handler);
+  }, [startNewSession]);
+
+  const handleNewChat = () => {
+    startNewSession();
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('s');
+      window.history.replaceState({}, '', url.toString());
+    }
+    router.push('/tasks');
+    window.dispatchEvent(new Event('sessionchange'));
+  };
 
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-4 p-6">
@@ -56,10 +79,10 @@ export default function TasksPage() {
           {hydrated && results.length > 0 && (
             <button
               type="button"
-              onClick={clearHistory}
+              onClick={handleNewChat}
               className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50"
             >
-              清空结果
+              新建对话
             </button>
           )}
         </div>

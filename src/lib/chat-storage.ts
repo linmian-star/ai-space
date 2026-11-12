@@ -18,6 +18,8 @@ const STORAGE_PREFIX = 'ai-space';
 const STORAGE_VERSION = 1;
 const TITLE_MAX_LEN = 30;
 const SEARCH_RESULTS_KEEP = 5;
+// 每个 storageKey 最多保留的会话数；超出后从最老的开始丢弃
+const MAX_SESSIONS = 30;
 
 export interface StoredSession {
   id: string;
@@ -191,19 +193,28 @@ function writeWithEviction(k: string, shape: StorageShape): void {
   }
 }
 
-// 保存当前会话。messages 为空等价于清除存档。
-// 存档内容完全来自入参（state 的投影），不在此读取旧数据合并。
+// 保存当前会话。messages 为空等价于「删除这个会话」（不是清空整个 storageKey）。
+// 与旧版本（单会话覆盖）的关键区别：先读旧 shape → 按 id upsert → 写回全部 sessions。
 export function saveSession(name: string, input: SaveSessionInput): void {
   if (!isBrowser()) return;
   const k = storageKey(name);
 
   if (input.messages.length === 0) {
-    clearSession(name);
+    // messages 为空：只删除这一条会话（如果是唯一一条则整个 key 清掉）
+    const shape = readShape(k);
+    if (!shape || shape.sessions.length === 0) return;
+    if (shape.sessions.length === 1 && shape.sessions[0].id === input.id) {
+      clearSession(name);
+      return;
+    }
+    const filtered = shape.sessions.filter(s => s.id !== input.id);
+    if (filtered.length === 0) clearSession(name);
+    else writeWithEviction(k, { version: STORAGE_VERSION, sessions: filtered });
     return;
   }
 
   const now = Date.now();
-  const session: StoredSession = {
+  const updatedSession: StoredSession = {
     id: input.id,
     title: deriveTitle(input.messages),
     createdAt: input.createdAt || now,
@@ -211,7 +222,50 @@ export function saveSession(name: string, input: SaveSessionInput): void {
     messages: slimMessages(input.messages),
   };
 
-  writeWithEviction(k, { version: STORAGE_VERSION, sessions: [session] });
+  // 读旧 shape → 按 id 过滤掉旧版本 → 新会话放到末尾 → 按 updatedAt 倒序 → 截断到 MAX_SESSIONS
+  const shape = readShape(k);
+  const others = shape ? shape.sessions.filter(s => s.id !== input.id) : [];
+  const merged = [...others, updatedSession]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, MAX_SESSIONS);
+
+  writeWithEviction(k, { version: STORAGE_VERSION, sessions: merged });
+}
+
+// 给侧边栏用的轻量会话元数据（不带 messages，体积小）
+export interface SessionMeta {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// 返回按 updatedAt 倒序的会话列表，不带 messages，给 Sidebar 渲染用。
+export function listSessions(name: string): SessionMeta[] {
+  const shape = readShape(storageKey(name));
+  if (!shape || shape.sessions.length === 0) return [];
+  return [...shape.sessions]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map(({ id, title, createdAt, updatedAt }) => ({ id, title, createdAt, updatedAt }));
+}
+
+// 按 id 精确取一条会话；找不到返回 null。
+export function loadSessionById(name: string, id: string): StoredSession | null {
+  const shape = readShape(storageKey(name));
+  if (!shape) return null;
+  return shape.sessions.find(s => s.id === id) ?? null;
+}
+
+// 删除指定 id 的会话；删完如果 sessions 为空则整个 key 清掉。
+export function deleteSession(name: string, id: string): void {
+  const shape = readShape(storageKey(name));
+  if (!shape || shape.sessions.length === 0) return;
+  const filtered = shape.sessions.filter(s => s.id !== id);
+  if (filtered.length === 0) {
+    clearSession(name);
+  } else {
+    writeWithEviction(storageKey(name), { version: STORAGE_VERSION, sessions: filtered });
+  }
 }
 
 export { createId as newSessionId };
