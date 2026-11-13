@@ -1,8 +1,8 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Components } from 'react-markdown';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, X } from 'lucide-react';
 
 // 从 ReactNode 树中递归提取纯文本（用于 pre 组件复制代码）
 function extractText(node: ReactNode): string {
@@ -16,41 +16,80 @@ function extractText(node: ReactNode): string {
 }
 
 // 代码块复制按钮（仅 fenced code block 加，inline code 不加）
+// 三态：idle / copied / failed —— 失败时明确告知，不假装成功。
 function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 卸载时清掉未执行的定时器，避免在已卸载组件上 setState
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // HTTP 环境降级（localhost 也是安全上下文，基本不会触发）
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.left = '-9999px';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
+
+    let ok = false;
+
+    // ① 先判断 API 是否存在：非安全上下文（http + 内网 IP）下 clipboard 为 undefined
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      } catch {
+        ok = false;
+      }
     }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+
+    // ② 降级方案同样要接返回值：execCommand 失败会返回 false
+    if (!ok) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        ok = false;
+      }
+    }
+
+    setStatus(ok ? 'copied' : 'failed');
+
+    // ③ 连点时先清旧定时器，避免上一次的 timer 提前撤掉这次的状态
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setStatus('idle');
+      timerRef.current = null;
+    }, 1500);
   };
 
   return (
     <button
       onClick={handleCopy}
       className="absolute right-2 top-2 flex items-center gap-1 rounded border border-zinc-300 bg-zinc-50 px-1.5 py-0.5 text-[11px] text-zinc-500 opacity-70 transition-opacity hover:opacity-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
-      aria-label="复制代码"
+      aria-label={status === 'copied' ? '已复制' : status === 'failed' ? '复制失败' : '复制代码'}
     >
-      {copied ? (
+      {status === 'copied' && (
         <>
           <Check className="h-3 w-3" />
           <span>已复制</span>
         </>
-      ) : (
+      )}
+      {status === 'failed' && (
+        <>
+          <X className="h-3 w-3" />
+          <span>复制失败</span>
+        </>
+      )}
+      {status === 'idle' && (
         <>
           <Copy className="h-3 w-3" />
           <span>复制</span>
