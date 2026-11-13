@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { MessageSquare, ListTodo, Search, Bot, Plus, Trash2 } from "lucide-react";
+import { MessageSquare, ListTodo, Search, Bot, Plus, Trash2, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   deleteSession,
@@ -62,6 +62,7 @@ export default function Sidebar() {
 
   const activeSessionId = useUrlSessionId();
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   // 刷新列表：读当前模块的 localStorage
   const refresh = useCallback(() => {
@@ -125,7 +126,36 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
+    <>
+      {/* 汉堡按钮 - 仅移动端显示，fixed 定位独立于 Sidebar 的 transform */}
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        aria-label="打开侧边栏"
+        className="fixed left-3 top-3 z-[60] flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-50 md:hidden dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
+      {/* 遮罩层 - 仅移动端 open 时显示，点了关闭 */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* 侧边栏本体 */}
+      <aside
+        className={cn(
+          'flex w-60 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground',
+          // 桌面端（md+）：常驻，静态布局，不参与折叠
+          'md:static md:translate-x-0 md:border-r md:shrink-0',
+          // 移动端（md-）：fixed 滑入，默认藏在左外，open 时显现
+          'fixed inset-y-0 left-0 z-50 transform transition-transform duration-200',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
       {/* 顶部品牌区 */}
       <div className="flex items-center gap-2.5 px-4 py-4 border-b border-border">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -135,6 +165,15 @@ export default function Sidebar() {
           <span className="text-sm font-semibold leading-tight">AI Workbench</span>
           <span className="text-[11px] text-muted-foreground leading-tight">Next.js · AI SDK</span>
         </div>
+        {/* 移动端关闭按钮 */}
+        <button
+          type="button"
+          onClick={() => setMobileOpen(false)}
+          aria-label="关闭侧边栏"
+          className="ml-auto flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground md:hidden"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
 
       {/* 导航分组 */}
@@ -152,6 +191,7 @@ export default function Sidebar() {
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={() => setMobileOpen(false)}
                     className={cn(
                       "relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
                       active
@@ -202,7 +242,10 @@ export default function Sidebar() {
                     <Link
                       key={s.id}
                       href={`${currentHref}?s=${s.id}`}
-                      onClick={() => window.dispatchEvent(new Event('sessionchange'))}
+                      onClick={() => {
+                        window.dispatchEvent(new Event('sessionchange'));
+                        setMobileOpen(false);
+                      }}
                       className={cn(
                         "group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors",
                         isActive
@@ -240,5 +283,6 @@ export default function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   );
 }

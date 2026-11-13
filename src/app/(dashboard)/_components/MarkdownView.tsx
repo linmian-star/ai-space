@@ -1,6 +1,64 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useState, type ReactNode } from 'react';
 import type { Components } from 'react-markdown';
+import { Copy, Check } from 'lucide-react';
+
+// 从 ReactNode 树中递归提取纯文本（用于 pre 组件复制代码）
+function extractText(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractText).join('');
+  if (node && typeof node === 'object' && 'props' in (node as { props?: unknown })) {
+    const p = (node as { props?: { children?: ReactNode } }).props;
+    if (p?.children !== undefined) return extractText(p.children);
+  }
+  return '';
+}
+
+// 代码块复制按钮（仅 fenced code block 加，inline code 不加）
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // HTTP 环境降级（localhost 也是安全上下文，基本不会触发）
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="absolute right-2 top-2 flex items-center gap-1 rounded border border-zinc-300 bg-zinc-50 px-1.5 py-0.5 text-[11px] text-zinc-500 opacity-70 transition-opacity hover:opacity-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+      aria-label="复制代码"
+    >
+      {copied ? (
+        <>
+          <Check className="h-3 w-3" />
+          <span>已复制</span>
+        </>
+      ) : (
+        <>
+          <Copy className="h-3 w-3" />
+          <span>复制</span>
+        </>
+      )}
+    </button>
+  );
+}
 
 // 各 Markdown 元素对应的 Tailwind 样式
 const components: Components = {
@@ -32,11 +90,17 @@ const components: Components = {
       {children}
     </code>
   ),
-  pre: ({ children }) => (
-    <pre className="mb-3 overflow-x-auto rounded-md bg-zinc-100 p-3 text-xs dark:bg-zinc-800">
-      {children}
-    </pre>
-  ),
+  pre: ({ children }) => {
+    const codeText = extractText(children);
+    return (
+      <div className="relative mb-3">
+        <CopyButton text={codeText} />
+        <pre className="overflow-x-auto rounded-md bg-zinc-100 p-3 text-xs dark:bg-zinc-800">
+          {children}
+        </pre>
+      </div>
+    );
+  },
   a: ({ href, children }) => (
     <a
       href={href}
