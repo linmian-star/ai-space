@@ -2,7 +2,6 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import {
   MAX_FETCHES,
-  type EmbeddedChunk,
   type FetchQuality,
   type ResearchChunk,
   type ResearchState,
@@ -187,28 +186,27 @@ export function createFetchPageTool(
       // 保持放宽为字符串，在 execute 内统一用 state.normalizeUrl 规范化，让模型有机会自纠。
       url: z.string().min(1).describe('The full URL of the page to fetch'),
     }),
+    // 只把模型真正需要的内容回传：工具返回值会被 AI SDK 原样拼进下一步请求的
+    // tool 消息，携带 2048 维向量会让请求体膨胀到数百 KB 并触发「Prompt 超长」。
+    // chunks / embeddings 留在函数内部写入向量库，Synthesis 阶段走 RAG 检索，无需回传。
     execute: async ({
       url,
     }): Promise<{
       url: string;
       content: string;
       quality: FetchQuality;
-      chunks: ResearchChunk[];
-      embeddings: EmbeddedChunk[];
       cached: boolean;
     }> => {
       // 统一规范化：与 search 去重同一规则，规范化结果同时作为缓存 key
       const normalizedUrl = state.normalizeUrl(url);
 
-      // 缓存命中：直接返回，不重复发起 HTTP 请求（含质量等级、chunk 列表与 embedding）
+      // 缓存命中：直接返回，不重复发起 HTTP 请求
       const cached = state.getCachedFetch(normalizedUrl);
       if (cached) {
         return {
           url: cached.url,
           content: cached.content,
           quality: cached.quality,
-          chunks: cached.chunks,
-          embeddings: cached.embeddings,
           cached: true,
         };
       }
@@ -269,7 +267,7 @@ export function createFetchPageTool(
           error instanceof Error ? error.message : error,
         );
       }
-      return { url: normalizedUrl, content, quality, chunks, embeddings, cached: false };
+      return { url: normalizedUrl, content, quality, cached: false };
     },
   });
 }
