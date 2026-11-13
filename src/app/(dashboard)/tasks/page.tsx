@@ -4,6 +4,7 @@ import { DefaultChatTransport } from 'ai';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MarkdownView from '../_components/MarkdownView';
+import { SkeletonBubble } from '../_components/SkeletonBubble';
 import { usePersistentChat } from '../_hooks/usePersistentChat';
 import { useUrlSessionId } from '../_hooks/useUrlSessionId';
 
@@ -111,6 +112,8 @@ export default function TasksPage() {
               </MarkdownView>
             </div>
           ))}
+          {/* 摘要生成中（还没有 assistant 消息）：骨架屏占位 */}
+          {status === 'submitted' && <SkeletonBubble />}
         </div>
       )}
     </div>

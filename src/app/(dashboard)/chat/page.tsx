@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MarkdownView from '../_components/MarkdownView';
 import { MessageBubble } from '../_components/MessageBubble';
+import { SkeletonBubble } from '../_components/SkeletonBubble';
 import { usePersistentChat } from '../_hooks/usePersistentChat';
 import { useUrlSessionId } from '../_hooks/useUrlSessionId';
 import { Button } from '@/components/ui/button';
@@ -147,6 +148,8 @@ export default function ChatPage() {
                   )}
               </MessageBubble>
             ))}
+            {/* 请求已发出、AI 还没吐第一个字：用骨架屏占位，避免大片空白 */}
+            {status === 'submitted' && <SkeletonBubble />}
           </div>
         )}
       </div>

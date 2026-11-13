@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import MarkdownView from '../_components/MarkdownView';
 import { MessageBubble } from '../_components/MessageBubble';
+import { SkeletonBubble } from '../_components/SkeletonBubble';
 import { usePersistentChat } from '../_hooks/usePersistentChat';
 import { useUrlSessionId } from '../_hooks/useUrlSessionId';
 import { Button } from '@/components/ui/button';
@@ -235,6 +236,8 @@ export default function ResearchPage() {
                 </div>
               </MessageBubble>
             ))}
+            {/* 研究阶段开始前（无任何工具调用/正文）：骨架屏占位 */}
+            {status === 'submitted' && <SkeletonBubble />}
           </div>
         )}
       </div>
