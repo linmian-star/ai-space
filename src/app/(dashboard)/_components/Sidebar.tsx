@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { MessageSquare, ListTodo, Search, Bot, Plus, Trash2, Menu, X } from "lucide-react";
+import { MessageSquare, ListTodo, Search, Bot, Plus, Trash2, Menu, X, PanelLeftClose, PanelLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   deleteSession,
@@ -16,42 +16,39 @@ type NavItem = {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
-  group: string;
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { group: '对话', label: 'Chat', href: '/chat', icon: MessageSquare },
-  { group: '工具', label: 'Tasks', href: '/tasks', icon: ListTodo },
-  { group: '研究', label: 'Research', href: '/research', icon: Search },
+  { label: '对话', href: '/chat', icon: MessageSquare },
+  { label: '文本任务', href: '/tasks', icon: ListTodo },
+  { label: '联网研究', href: '/research', icon: Search },
 ];
 
-// pathname → storageKey 映射；不在三个页面上返回 null（历史区块不显示）
+const SESSION_GROUPS = ['今天', '昨天', '过去 7 天', '更早'];
+
 function getStorageKey(pathname: string): string | null {
   if (pathname === '/chat') return 'chat';
   if (pathname === '/tasks') return 'tasks';
   if (pathname === '/research') return 'research';
   return null;
 }
-// 对应的 href：storageKey 'chat' → '/chat'，用于新建/跳转时的动态路径
 const STORAGE_KEY_TO_HREF: Record<string, string> = {
   chat: '/chat',
   tasks: '/tasks',
   research: '/research',
 };
 
-// 把时间戳格式化成相对时间（今天/昨天/MM-DD）
-function formatTime(ts: number): string {
-  const d = new Date(ts);
+function getSessionGroup(timestamp: number): string {
+  const date = new Date(timestamp);
   const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const isYesterday = d.toDateString() === yesterday.toDateString();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const daysAgo = Math.floor((startOfToday - startOfDate) / 86_400_000);
 
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  if (isToday) return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  if (isYesterday) return '昨天';
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  if (daysAgo <= 0) return '今天';
+  if (daysAgo === 1) return '昨天';
+  if (daysAgo < 7) return '过去 7 天';
+  return '更早';
 }
 
 export default function Sidebar() {
@@ -63,19 +60,18 @@ export default function Sidebar() {
   const activeSessionId = useUrlSessionId();
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
-  // 刷新列表：读当前模块的 localStorage
   const refresh = useCallback(() => {
     if (typeof window === 'undefined' || !currentStorageKey) return;
     setSessions(listSessions(currentStorageKey));
   }, [currentStorageKey]);
 
-  // 初次加载 + 切换到不同模块时刷新
   useEffect(() => {
-    refresh();
-  }, [refresh, currentStorageKey]);
+    const refreshTimer = setTimeout(refresh, 0);
+    return () => clearTimeout(refreshTimer);
+  }, [refresh]);
 
-  // 监听 storage 变更（跨标签同步）+ 内部 sessionchange 事件
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (!currentStorageKey) return;
@@ -90,17 +86,14 @@ export default function Sidebar() {
     };
   }, [refresh, currentStorageKey]);
 
-  // 按 group 分组导航
-  const grouped = NAV_ITEMS.reduce<Record<string, NavItem[]>>((acc, item) => {
-    (acc[item.group] ||= []).push(item);
-    return acc;
-  }, {});
+  const groupedSessions = SESSION_GROUPS.map(label => ({
+    label,
+    items: sessions.filter(session => getSessionGroup(session.updatedAt) === label),
+  })).filter(group => group.items.length > 0);
 
   const handleNewChat = () => {
     if (!currentStorageKey) return;
-    // 通知当前页面清空 messages（Sidebar 不知道页面的 hook，用事件广播）
     window.dispatchEvent(new Event('clearsession'));
-    // 先手动清掉 URL 参数（router.push 是软导航，不会立即改 window.location）
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       url.searchParams.delete('s');
@@ -115,7 +108,6 @@ export default function Sidebar() {
     e.stopPropagation();
     if (!currentStorageKey) return;
     deleteSession(currentStorageKey, id);
-    // 如果删的是当前激活会话：手动清 URL（不要再 router.push，软导航会覆盖 replaceState）
     if (activeSessionId === id && typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       url.searchParams.delete('s');
@@ -127,17 +119,20 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* 汉堡按钮 - 仅移动端显示，fixed 定位独立于 Sidebar 的 transform */}
+      {/* 汉堡按钮 - 仅移动端显示 */}
       <button
         type="button"
         onClick={() => setMobileOpen(true)}
         aria-label="打开侧边栏"
-        className="fixed left-3 top-3 z-[60] flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-50 md:hidden dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+        className={cn(
+          'fixed left-3 top-2.5 z-[60] flex h-9 w-9 items-center justify-center rounded-full border border-border/80 bg-background/95 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-accent hover:text-foreground md:hidden',
+          mobileOpen && 'hidden',
+        )}
       >
         <Menu className="h-5 w-5" />
       </button>
 
-      {/* 遮罩层 - 仅移动端 open 时显示，点了关闭 */}
+      {/* 遮罩层 - 仅移动端 */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
@@ -148,141 +143,169 @@ export default function Sidebar() {
       {/* 侧边栏本体 */}
       <aside
         className={cn(
-          'flex w-60 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground',
-          // 桌面端（md+）：常驻，静态布局，不参与折叠
-          'md:static md:translate-x-0 md:border-r md:shrink-0',
-          // 移动端（md-）：fixed 滑入，默认藏在左外，open 时显现
-          'fixed inset-y-0 left-0 z-50 transform transition-transform duration-200',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full',
+          'flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200',
+          // 桌面端：常驻，宽度根据 collapsed 切换
+          collapsed ? 'md:w-[64px]' : 'md:w-[264px]',
+          // 移动端：fixed 滑入
+          'w-[280px] fixed inset-y-0 left-0 z-50 transform transition-transform duration-200 md:static md:translate-x-0 md:shrink-0',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         )}
       >
-      {/* 顶部品牌区 */}
-      <div className="flex items-center gap-2.5 px-4 py-4 border-b border-border">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <Bot className="h-4 w-4" />
-        </div>
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold leading-tight">AI Workbench</span>
-          <span className="text-[11px] text-muted-foreground leading-tight">Next.js · AI SDK</span>
-        </div>
-        {/* 移动端关闭按钮 */}
-        <button
-          type="button"
-          onClick={() => setMobileOpen(false)}
-          aria-label="关闭侧边栏"
-          className="ml-auto flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground md:hidden"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* 导航分组 */}
-      <nav className="flex shrink-0 flex-col px-2 py-3">
-        {Object.entries(grouped).map(([group, items]) => (
-          <div key={group} className="mb-3">
-            <div className="px-2 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              {group}
-            </div>
-            <div className="flex flex-col gap-0.5">
-              {items.map(item => {
-                const active = pathname === item.href || pathname.startsWith(item.href + '/');
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileOpen(false)}
-                    className={cn(
-                      "relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
-                      active
-                        ? "bg-primary/10 text-primary font-medium"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                    )}
-                  >
-                    {/* Active态左侧竖条 */}
-                    {active && (
-                      <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-primary" />
-                    )}
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </div>
+        {/* 品牌区 + 折叠按钮 */}
+        <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-sidebar-border/70 px-3">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Bot className="h-4 w-4" />
           </div>
-        ))}
-      </nav>
-
-      {/* 历史会话区块（仅三个对话页面显示） */}
-      {currentStorageKey && (
-        <div className="flex min-h-0 flex-1 flex-col border-t border-border px-2 py-3">
-          <div className="mb-2 flex items-center justify-between px-2">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              历史
+          {!collapsed && (
+            <span className="flex-1 truncate text-sm font-semibold tracking-tight md:block">
+              AI Workbench
             </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setCollapsed(true)}
+            aria-label="折叠侧边栏"
+            title="折叠侧边栏"
+            className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground md:flex"
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            aria-label="关闭侧边栏"
+            className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground md:hidden"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* 折叠后展开按钮 */}
+        {collapsed && (
+          <div className="shrink-0 px-2 pt-2">
             <button
               type="button"
-              onClick={handleNewChat}
-              title="新建对话"
-              className="flex h-5 w-5 items-center justify-center rounded hover:bg-accent hover:text-foreground text-muted-foreground transition-colors"
+              onClick={() => setCollapsed(false)}
+              aria-label="展开侧边栏"
+              title="展开侧边栏"
+              className="flex h-9 w-full items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <PanelLeft className="h-4 w-4" />
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-            {sessions.length === 0 ? (
-              <div className="px-2 py-4 text-center text-[11px] text-muted-foreground">
-                暂无历史
-              </div>
-            ) : (
-              <div className="flex flex-col gap-0.5">
-                {sessions.map(s => {
-                  const isActive = activeSessionId === s.id;
-                  return (
-                    <Link
-                      key={s.id}
-                      href={`${currentHref}?s=${s.id}`}
-                      onClick={() => {
-                        window.dispatchEvent(new Event('sessionchange'));
-                        setMobileOpen(false);
-                      }}
-                      className={cn(
-                        "group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors",
-                        isActive
-                          ? "bg-primary/10 text-primary font-medium"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      )}
-                    >
-                      <span className="flex-1 truncate" title={s.title}>
-                        {s.title || '新对话'}
-                      </span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground/70 group-hover:hidden">
-                        {formatTime(s.updatedAt)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteSession(e, s.id)}
-                        title="删除"
-                        className="hidden shrink-0 h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 group-hover:flex"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* 底部版本号 */}
-      <div className="border-t border-border px-4 py-3">
-        <div className="text-[11px] text-muted-foreground">
-          v0.2.0
+        {/* 新建对话按钮 */}
+        <div className={cn('shrink-0 pt-3', collapsed ? 'px-2 pb-1' : 'px-3 pb-1')}>
+          <button
+            type="button"
+            onClick={handleNewChat}
+            disabled={!currentStorageKey}
+            title="新建对话"
+            className={cn(
+              'flex h-10 w-full items-center rounded-xl border border-sidebar-border bg-background text-sm font-medium shadow-xs transition-all hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50',
+              collapsed ? 'justify-center px-0' : 'gap-2.5 px-3',
+            )}
+          >
+            <Plus className="h-4 w-4" />
+            {!collapsed && <span>新建对话</span>}
+          </button>
         </div>
-      </div>
-    </aside>
+
+        {/* 导航 */}
+        <nav className={cn('flex shrink-0 flex-col gap-0.5 py-3', collapsed ? 'px-2' : 'px-3')}>
+          {NAV_ITEMS.map(item => {
+            const active = pathname === item.href || pathname.startsWith(item.href + '/');
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileOpen(false)}
+                title={collapsed ? item.label : undefined}
+                className={cn(
+                  'flex h-10 items-center gap-3 rounded-xl text-[13px] transition-colors',
+                  collapsed ? 'justify-center px-0' : 'px-3',
+                  active
+                    ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+                    : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground',
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {!collapsed && item.label}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* 历史会话 - 折叠时隐藏 */}
+        {currentStorageKey && !collapsed && (
+          <div className="flex min-h-0 flex-1 flex-col px-3 pb-3 pt-2">
+            <div className="mb-2 flex items-center justify-between px-3 text-[11px] text-muted-foreground">
+              <span>对话记录</span>
+              {sessions.length > 0 && <span>{sessions.length}</span>}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+              {sessions.length === 0 ? (
+                <div className="px-3 py-8 text-center text-xs text-muted-foreground/80">
+                  暂无历史对话
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {groupedSessions.map(group => (
+                    <section key={group.label}>
+                      <h2 className="px-3 pb-1.5 text-[11px] font-medium text-muted-foreground/80">
+                        {group.label}
+                      </h2>
+                      <div className="flex flex-col gap-0.5">
+                        {group.items.map(session => {
+                          const isActive = activeSessionId === session.id;
+                          return (
+                            <Link
+                              key={session.id}
+                              href={`${currentHref}?s=${session.id}`}
+                              onClick={() => {
+                                window.dispatchEvent(new Event('sessionchange'));
+                                setMobileOpen(false);
+                              }}
+                              className={cn(
+                                'group flex h-9 items-center gap-1 rounded-lg px-3 text-[13px] transition-colors',
+                                isActive
+                                  ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+                                  : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground',
+                              )}
+                            >
+                              <span className="flex-1 truncate" title={session.title}>
+                                {session.title || '新对话'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={event => handleDeleteSession(event, session.id)}
+                                title="删除对话"
+                                aria-label="删除对话"
+                                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-all hover:bg-background hover:text-destructive opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 底部版本号 - 折叠时也显示 */}
+        {!collapsed && (
+          <div className="shrink-0 border-t border-sidebar-border/70 px-5 py-3 text-[11px] text-muted-foreground/70">
+            AI Workbench · v0.2.0
+          </div>
+        )}
+      </aside>
     </>
   );
 }

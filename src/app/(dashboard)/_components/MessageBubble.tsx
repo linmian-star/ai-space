@@ -1,12 +1,12 @@
 'use client';
 
+import { useState } from 'react';
+import { Check, Copy } from 'lucide-react';
 import type { UIMessage } from 'ai';
-import MarkdownView from './MarkdownView';
 
 /**
  * 单条消息气泡组件。
- * 负责：头像、气泡样式、打字光标（流式输出最后一条 assistant 消息）。
- * Chat 页和 Research 页都用它。
+ * 负责：用户气泡、AI 消息排版、打字光标、AI 消息复制按钮。
  */
 export function MessageBubble({
   message,
@@ -14,52 +14,65 @@ export function MessageBubble({
   children,
 }: {
   message: UIMessage;
-  /** 是否正在流式输出（决定 assistant 末尾要不要显示闪烁光标） */
   isStreaming: boolean;
-  /** assistant 的内容（由父页面决定：纯 text / 混合 text+dynamic-tool） */
   children: React.ReactNode;
 }) {
   const isUser = message.role === 'user';
+  const showTypingCursor = !isUser && isStreaming;
+  const [copied, setCopied] = useState(false);
 
-  // 这条是不是最后一条 assistant 消息（用来判断要不要加打字光标）
-  const isLastAssistant = !isUser;
-  const showTypingCursor = isLastAssistant && isStreaming;
+  const handleCopy = async () => {
+    const text = message.parts
+      .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+      .map(p => p.text)
+      .join('\n')
+      .trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* 隐私模式等场景 clipboard 可能不可用 */
+    }
+  };
 
   return (
-    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-      {/* 头像 */}
-      <div
-        className={
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-medium ' +
-          (isUser
-            ? 'bg-primary text-primary-foreground'
-            : 'bg-muted text-muted-foreground border border-border')
-        }
-      >
-        {isUser ? '我' : 'AI'}
-      </div>
-
-      {/* 消息体 */}
-      <div className={`flex flex-col gap-2 max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
-        {isUser ? (
-          // 用户消息：渐变气泡 + 右对齐
-          <div className="rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground shadow-sm">
-            {message.parts
-              .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-              .map((p, i) => (
-                <span key={`${message.id}-${i}`}>{p.text}</span>
-              ))}
-          </div>
-        ) : (
-          // AI 消息：卡片 + 左对齐 + 打字光标
-          <div className="w-full space-y-2">
-            {children}
-            {showTypingCursor && (
-              <span className="inline-block h-4 w-0.5 translate-y-0.5 animate-pulse bg-foreground/60" />
-            )}
-          </div>
-        )}
-      </div>
+    <div className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}>
+      {isUser ? (
+        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-secondary px-4 py-2.5 text-[15px] leading-7 text-secondary-foreground">
+          {message.parts
+            .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+            .map((part, index) => (
+              <span key={`${message.id}-${index}`}>{part.text}</span>
+            ))}
+        </div>
+      ) : (
+        <div className="group relative min-w-0 w-full space-y-2 text-[15px] text-foreground">
+          {children}
+          {showTypingCursor && (
+            <span className="inline-block h-4 w-0.5 translate-y-0.5 animate-pulse bg-foreground/60" />
+          )}
+          {/* AI 消息复制按钮 - 悬停时显示 */}
+          {!showTypingCursor && message.parts.some(
+            (p): p is { type: 'text'; text: string } => p.type === 'text' && p.text.trim() !== '',
+          ) && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              aria-label="复制 AI 回复"
+              title="复制"
+              className="absolute -right-2 top-0 hidden h-7 w-7 items-center justify-center rounded-md border border-border/80 bg-background text-muted-foreground opacity-0 transition-all hover:bg-accent hover:text-foreground group-hover:flex group-hover:opacity-100 focus-visible:flex focus-visible:opacity-100"
+            >
+              {copied ? (
+                <Check className="h-3.5 w-3.5 text-emerald-500" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -49,6 +49,8 @@ export interface PersistentChatHelpers<UI_MESSAGE extends UIMessage>
   hydrated: boolean;
   // 当前激活会话 id（可能为 null = 新对话，尚未落盘）
   activeSessionId: string | null;
+  // 当前会话标题（派生值，给 TopBar 和消息区显示用）
+  currentTitle: string;
   // 按 updatedAt 倒序的会话列表（轻量元数据，不带 messages）
   sessions: SessionMeta[];
   // 切到指定会话；正在流式输出时会先停止
@@ -70,6 +72,7 @@ export function usePersistentChat<UI_MESSAGE extends UIMessage = UIMessage>(
 
   const [hydrated, setHydrated] = useState(false);
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
   // 会话元数据快照：水合时从存档带出，之后只在内存维护；
   // 保存时与当前 messages 一起整体写入（存储层不参与合并）。
@@ -115,11 +118,15 @@ export function usePersistentChat<UI_MESSAGE extends UIMessage = UIMessage>(
     if (current.length === 0) {
       // 对话被清空：同步删掉元数据；存档由调用方（clearHistory）处理
       sessionIdRef.current = null;
+      setCurrentSessionId(null);
       createdAtRef.current = 0;
       return;
     }
 
-    if (!sessionIdRef.current) sessionIdRef.current = newSessionId();
+    if (!sessionIdRef.current) {
+      sessionIdRef.current = newSessionId();
+      setCurrentSessionId(sessionIdRef.current);
+    }
     if (!createdAtRef.current) createdAtRef.current = Date.now();
 
     saveSession(sk, {
@@ -143,38 +150,43 @@ export function usePersistentChat<UI_MESSAGE extends UIMessage = UIMessage>(
   // 有 activeSessionId → 按 id 精确取；没有 → 取最近一条（旧行为兜底）。
   // 只在 storageKey 或 activeSessionId 变化时执行。
   useEffect(() => {
-    const sk = storageKey;
-    const targetId = activeSessionId ?? null;
-    const prev = prevActiveIdRef.current;
-    prevActiveIdRef.current = targetId;
+    const hydrationTimer = setTimeout(() => {
+      const sk = storageKey;
+      const targetId = activeSessionId ?? null;
+      const prev = prevActiveIdRef.current;
+      prevActiveIdRef.current = targetId;
 
-    let stored = null;
-    if (targetId) {
-      stored = loadSessionById(sk, targetId);
-      // id 不存在（被手动删了 / 跨设备）→ 降级取最近一条
-      if (!stored) stored = loadSession(sk);
-    } else if (prev !== undefined && prev !== null) {
-      // activeSessionId 从有值 → null：用户主动新建对话，保持空状态，不自动加载旧会话
-      stored = null;
-    } else {
-      // 首次进入页面 / storageKey 变化：取最近一条（旧行为兜底）
-      stored = loadSession(sk);
-    }
+      let stored = null;
+      if (targetId) {
+        stored = loadSessionById(sk, targetId);
+        // id 不存在（被手动删了 / 跨设备）→ 降级取最近一条
+        if (!stored) stored = loadSession(sk);
+      } else if (prev !== undefined && prev !== null) {
+        // activeSessionId 从有值 → null：用户主动新建对话，保持空状态，不自动加载旧会话
+        stored = null;
+      } else {
+        // 首次进入页面 / storageKey 变化：取最近一条（旧行为兜底）
+        stored = loadSession(sk);
+      }
 
-    if (stored && stored.messages.length > 0) {
-      sessionIdRef.current = stored.id;
-      createdAtRef.current = stored.createdAt;
-      setMessages(stored.messages as UI_MESSAGE[]);
-    } else {
-      sessionIdRef.current = null;
-      createdAtRef.current = 0;
-      setMessages([] as UI_MESSAGE[]);
-    }
+      if (stored && stored.messages.length > 0) {
+        sessionIdRef.current = stored.id;
+        setCurrentSessionId(stored.id);
+        createdAtRef.current = stored.createdAt;
+        setMessages(stored.messages as UI_MESSAGE[]);
+      } else {
+        sessionIdRef.current = null;
+        setCurrentSessionId(null);
+        createdAtRef.current = 0;
+        setMessages([] as UI_MESSAGE[]);
+      }
 
-    setSessions(listSessions(sk));
-    hydratedRef.current = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 外部存储水合只能在 effect 后触发
-    setHydrated(true);
+      setSessions(listSessions(sk));
+      hydratedRef.current = true;
+      setHydrated(true);
+    }, 0);
+
+    return () => clearTimeout(hydrationTimer);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey, activeSessionId]);
@@ -216,6 +228,7 @@ export function usePersistentChat<UI_MESSAGE extends UIMessage = UIMessage>(
       deleteSession(sk, sessionIdRef.current);
     }
     sessionIdRef.current = null;
+    setCurrentSessionId(null);
     createdAtRef.current = 0;
     setMessages([] as UI_MESSAGE[]);
     refreshSessions();
@@ -245,6 +258,7 @@ export function usePersistentChat<UI_MESSAGE extends UIMessage = UIMessage>(
       const target = loadSessionById(sk, id);
       if (!target) return;
       sessionIdRef.current = target.id;
+      setCurrentSessionId(target.id);
       createdAtRef.current = target.createdAt;
       setMessages(target.messages as UI_MESSAGE[]);
       refreshSessions();
@@ -259,14 +273,35 @@ export function usePersistentChat<UI_MESSAGE extends UIMessage = UIMessage>(
     }
     flush();
     sessionIdRef.current = null;
+    setCurrentSessionId(null);
     createdAtRef.current = 0;
     setMessages([] as UI_MESSAGE[]);
   }, [flush, setMessages, status, stop]);
 
+  // 派生当前会话标题：优先从 sessions 里找，没有就从 messages 里推
+  let currentTitle = '';
+  if (sessionIdRef.current) {
+    const found = sessions.find(s => s.id === sessionIdRef.current);
+    if (found) currentTitle = found.title;
+  }
+  if (!currentTitle && messagesRef.current.length > 0) {
+    const msgs = messagesRef.current as UIMessage[];
+    const firstUser = msgs.find((m: UIMessage) => m.role === 'user');
+    if (firstUser) {
+      const text = firstUser.parts
+        .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+        .map((p: { type: 'text'; text: string }) => p.text)
+        .join(' ')
+        .trim();
+      currentTitle = text.slice(0, 30) + (text.length > 30 ? '…' : '');
+    }
+  }
+
   return {
     ...chat,
     hydrated,
-    activeSessionId: sessionIdRef.current,
+    activeSessionId: currentSessionId,
+    currentTitle,
     sessions,
     switchSession,
     startNewSession,

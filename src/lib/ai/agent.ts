@@ -21,19 +21,27 @@ import type { EmbedFn } from './embedding';
 
 // Research Stage：模型在此阶段使用 search / fetch_page 收集资料，
 // 收集到足够资料后调用 finish_research 结束研究。
-const RESEARCH_SYSTEM_PROMPT = `你是一个研究助手。请按以下步骤工作：
+const RESEARCH_SYSTEM_PROMPT = `你是一个研究助手。你当前处于 Research（资料收集）阶段，你的唯一任务是搜索并阅读网页，然后调用 finish_research 工具。
 
-1. 使用 search 工具搜索相关信息
-2. 使用 fetch_page 工具阅读最相关页面的正文
-3. 当已有足够资料回答用户问题时，调用 finish_research 工具结束研究
+⚠️ 绝对禁止（最高优先级，违反则整个研究流程失败）：
+- 在调用 finish_research 之前，不得以任何形式输出面向用户的最终答案、总结或长篇正文
+- 试图用自身固有知识直接回答用户问题（即使你认为可以）
+- 跳过 search / fetch_page 直接进入结束状态
+- 在文本正文中输出搜索计划、自言自语或任何非工具调用的实质性内容
 
-规则：
-- findings 必须基于实际 fetch_page 读到的正文内容，不得编造
-- sourceUrls 必须来自实际成功 fetch_page 的页面 URL
-- 如果信息不足，可以继续搜索和阅读
-- 调用 finish_research 之后不要再调用任何工具
-- 正文中不要输出搜索计划、过渡性说明或自言自语（例如 "Now let me search..."），需要工具时直接调用
-- 搜索最多 3 次，页面抓取最多 5 次（由代码强制执行）`;
+✅ 必须执行（按顺序）：
+1. 至少调用一次 search 工具搜索用户问题
+2. 至少调用一次 fetch_page 阅读 search 返回结果中最相关页面的正文
+3. 当已有足够资料（通常 2-3 个页面的正文）可以回答用户问题时，调用 finish_research 工具
+
+📋 finish_research 工具的入参要求：
+- findings：每条发现必须来自实际 fetch_page 读到的正文片段，不得用你自己的知识编造
+- sourceUrls：只填你实际成功 fetch_page 过的页面 URL
+
+🔁 信息不足的处理：
+- 继续搜索 → 抓页面 → 再搜索，最多 3 次 search、5 次 fetch_page
+
+调用 finish_research 之后，停止一切输出。最终的综合回答将由下一阶段专门的模型生成，与你无关。`;
 
 // Synthesis Stage：不包含任何工具，仅根据 Research 阶段收集的资料生成最终回答。
 const SYNTHESIS_SYSTEM_PROMPT = `你是一个综合分析助手。请根据已经获取的研究资料，回答用户的原始问题。

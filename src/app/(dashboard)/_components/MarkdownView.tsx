@@ -74,7 +74,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="absolute right-2 top-2 flex items-center gap-1 rounded border border-zinc-300 bg-zinc-50 px-1.5 py-0.5 text-[11px] text-zinc-500 opacity-70 transition-opacity hover:opacity-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+      className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-[11px] text-zinc-300 opacity-80 transition-all hover:bg-white/15 hover:opacity-100"
       aria-label={status === 'copied' ? '已复制' : status === 'failed' ? '复制失败' : '复制代码'}
     >
       {status === 'copied' && (
@@ -102,39 +102,31 @@ function CopyButton({ text }: { text: string }) {
 // 各 Markdown 元素对应的 Tailwind 样式
 const components: Components = {
   h1: ({ children }) => (
-    <h1 className="mb-3 mt-4 text-xl font-bold text-zinc-900 dark:text-zinc-50">{children}</h1>
+    <h1 className="mb-3 mt-6 text-xl font-semibold tracking-tight first:mt-0">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="mb-2 mt-4 text-lg font-bold text-zinc-900 dark:text-zinc-50">{children}</h2>
+    <h2 className="mb-3 mt-6 text-lg font-semibold tracking-tight first:mt-0">{children}</h2>
   ),
   h3: ({ children }) => (
-    <h3 className="mb-2 mt-3 text-base font-semibold text-zinc-900 dark:text-zinc-50">{children}</h3>
+    <h3 className="mb-2 mt-5 text-base font-semibold first:mt-0">{children}</h3>
   ),
-  p: ({ children }) => (
-    <p className="mb-3 leading-6">{children}</p>
-  ),
-  ul: ({ children }) => (
-    <ul className="mb-3 list-disc space-y-1 pl-5">{children}</ul>
-  ),
-  ol: ({ children }) => (
-    <ol className="mb-3 list-decimal space-y-1 pl-5">{children}</ol>
-  ),
-  li: ({ children }) => <li className="leading-6">{children}</li>,
-  strong: ({ children }) => (
-    <strong className="font-semibold text-zinc-900 dark:text-zinc-50">{children}</strong>
-  ),
+  p: ({ children }) => <p className="mb-4 leading-7 last:mb-0">{children}</p>,
+  ul: ({ children }) => <ul className="mb-4 list-disc space-y-1.5 pl-5 last:mb-0">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-4 list-decimal space-y-1.5 pl-5 last:mb-0">{children}</ol>,
+  li: ({ children }) => <li className="leading-7">{children}</li>,
+  strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   code: ({ children }) => (
-    <code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-indigo-600 dark:bg-zinc-800 dark:text-indigo-400">
+    <code className="rounded-md bg-muted px-1.5 py-0.5 text-[0.85em] text-foreground">
       {children}
     </code>
   ),
   pre: ({ children }) => {
     const codeText = extractText(children);
     return (
-      <div className="relative mb-3">
+      <div className="relative mb-4 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 last:mb-0">
         <CopyButton text={codeText} />
-        <pre className="overflow-x-auto rounded-md bg-zinc-100 p-3 text-xs dark:bg-zinc-800">
+        <pre className="overflow-x-auto p-4 pr-20 text-[13px] leading-6 text-zinc-100 [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit">
           {children}
         </pre>
       </div>
@@ -145,31 +137,31 @@ const components: Components = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-indigo-600 underline hover:text-indigo-500 dark:text-indigo-400"
+      className="text-foreground underline decoration-muted-foreground/50 underline-offset-4 hover:decoration-foreground"
     >
       {children}
     </a>
   ),
   blockquote: ({ children }) => (
-    <blockquote className="mb-3 border-l-2 border-zinc-300 pl-3 italic text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+    <blockquote className="mb-4 border-l-2 border-border pl-4 text-muted-foreground last:mb-0">
       {children}
     </blockquote>
   ),
-  hr: () => <hr className="my-4 border-zinc-200 dark:border-zinc-700" />,
+  hr: () => <hr className="my-6 border-border/70" />,
   table: ({ children }) => (
-    <table className="mb-3 border-collapse text-xs">{children}</table>
+    <div className="mb-4 overflow-x-auto last:mb-0">
+      <table className="w-full border-collapse text-[13px]">{children}</table>
+    </div>
   ),
   th: ({ children }) => (
-    <th className="border border-zinc-300 px-2 py-1 font-semibold dark:border-zinc-700">{children}</th>
+    <th className="border border-border bg-muted/50 px-3 py-2 text-left font-semibold">{children}</th>
   ),
-  td: ({ children }) => (
-    <td className="border border-zinc-300 px-2 py-1 dark:border-zinc-700">{children}</td>
-  ),
+  td: ({ children }) => <td className="border border-border px-3 py-2">{children}</td>,
 };
 
 export default function MarkdownView({ children }: { children: string }) {
   return (
-    <div className="text-sm text-zinc-800 dark:text-zinc-200">
+    <div className="break-words text-[15px] leading-7 text-foreground/90">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {children}
       </ReactMarkdown>
