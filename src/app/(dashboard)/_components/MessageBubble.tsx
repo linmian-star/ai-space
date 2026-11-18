@@ -1,12 +1,57 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import type { UIMessage } from 'ai';
+import { getImage } from '@/lib/image-store';
+
+const IMAGE_URL_PREFIX = 'idb://';
+
+/**
+ * 用户上传的图片：消息里只存 idb://<fileId>，
+ * 渲染时异步从 IndexedDB 读回 base64；读不到就兜底显示【图片已失效】。
+ */
+function UserImage({ url }: { url: string }) {
+  const fileId = url.startsWith(IMAGE_URL_PREFIX) ? url.slice(IMAGE_URL_PREFIX.length) : '';
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(fileId === '');
+
+  useEffect(() => {
+    if (!fileId) return;
+    let cancelled = false;
+    void getImage(fileId).then(record => {
+      if (cancelled) return;
+      if (record?.dataUrl) setSrc(record.dataUrl);
+      else setFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fileId]);
+
+  if (failed) {
+    return (
+      <div className="flex h-20 w-28 items-center justify-center rounded-xl border border-border/80 bg-muted px-2 text-center text-[12px] text-muted-foreground">
+        【图片已失效】
+      </div>
+    );
+  }
+  if (!src) {
+    return <div className="h-20 w-28 animate-pulse rounded-xl bg-muted" />;
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt="用户上传的图片"
+      className="max-h-52 max-w-[220px] rounded-xl border border-border/70 object-contain"
+    />
+  );
+}
 
 /**
  * 单条消息气泡组件。
- * 负责：用户气泡、AI 消息排版、打字光标、AI 消息复制按钮。
+ * 负责：用户气泡（含图片）、AI 消息排版、打字光标、AI 消息复制按钮。
  */
 export function MessageBubble({
   message,
@@ -20,6 +65,18 @@ export function MessageBubble({
   const isUser = message.role === 'user';
   const showTypingCursor = !isUser && isStreaming;
   const [copied, setCopied] = useState(false);
+
+  const fileParts = isUser
+    ? message.parts.filter((part): part is { type: 'file'; mediaType: string; url: string } =>
+        part.type === 'file',
+      )
+    : [];
+  const userText = isUser
+    ? message.parts
+        .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+        .map(part => part.text)
+        .join('')
+    : '';
 
   const handleCopy = async () => {
     const text = message.parts
@@ -40,12 +97,19 @@ export function MessageBubble({
   return (
     <div className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}>
       {isUser ? (
-        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-secondary px-4 py-2.5 text-[15px] leading-7 text-secondary-foreground">
-          {message.parts
-            .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
-            .map((part, index) => (
-              <span key={`${message.id}-${index}`}>{part.text}</span>
-            ))}
+        <div className="flex max-w-[85%] flex-col items-end gap-2">
+          {fileParts.length > 0 && (
+            <div className="flex flex-wrap justify-end gap-2">
+              {fileParts.map((part, index) => (
+                <UserImage key={`${message.id}-file-${index}`} url={part.url} />
+              ))}
+            </div>
+          )}
+          {userText.trim() !== '' && (
+            <div className="whitespace-pre-wrap break-words rounded-2xl bg-secondary px-4 py-2.5 text-[15px] leading-7 text-secondary-foreground">
+              {userText}
+            </div>
+          )}
         </div>
       ) : (
         <div className="group relative min-w-0 w-full space-y-2 text-[15px] text-foreground">

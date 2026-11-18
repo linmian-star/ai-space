@@ -13,6 +13,7 @@
 //   详见 research 页 describeOutput 对 __archived 的兼容。
 
 import type { UIMessage } from 'ai';
+import { deleteImages } from '@/lib/image-store';
 
 const STORAGE_PREFIX = 'ai-space';
 const STORAGE_VERSION = 1;
@@ -20,6 +21,9 @@ const TITLE_MAX_LEN = 30;
 const SEARCH_RESULTS_KEEP = 5;
 // 每个 storageKey 最多保留的会话数；超出后从最老的开始丢弃
 const MAX_SESSIONS = 30;
+// 图片 part 的 url 约定：idb://<fileId>。base64 只存在 IndexedDB，
+// localStorage 里永远只有这个短引用。
+const IMAGE_URL_PREFIX = 'idb://';
 
 export interface StoredSession {
   id: string;
@@ -108,6 +112,32 @@ function slimToolOutput(toolName: unknown, output: unknown): unknown {
   return output;
 }
 
+// 收集一批会话里所有图片的 fileId（用于删除会话时级联清理 IndexedDB）。
+function collectFileIds(sessions: StoredSession[]): string[] {
+  const ids: string[] = [];
+  for (const session of sessions) {
+    for (const message of session.messages) {
+      for (const part of message.parts ?? []) {
+        if (
+          part.type === 'file' &&
+          typeof part.url === 'string' &&
+          part.url.startsWith(IMAGE_URL_PREFIX)
+        ) {
+          ids.push(part.url.slice(IMAGE_URL_PREFIX.length));
+        }
+      }
+    }
+  }
+  return ids;
+}
+
+// 会话被丢弃 / 删除时同步删图，防止 IndexedDB 无限膨胀。
+// 异步执行且不等待：清理失败不影响 localStorage 这一侧的结果。
+function discardImagesOf(sessions: StoredSession[]): void {
+  const ids = collectFileIds(sessions);
+  if (ids.length > 0) void deleteImages(ids);
+}
+
 // 产出消息数组的「瘦身深拷贝」：绝不修改 useChat 内存中的原始 part 对象。
 // 用户文字 / AI 文字 / reasoning 思考过程原样保留（思考过程约 1-2KB，不大）。
 function slimMessages(messages: UIMessage[]): UIMessage[] {
@@ -118,6 +148,12 @@ function slimMessages(messages: UIMessage[]): UIMessage[] {
   for (const message of cloned) {
     if (!Array.isArray(message.parts)) continue;
     message.parts = message.parts.map(part => {
+      if (part && part.type === 'file') {
+        const url = typeof part.url === 'string' ? part.url : '';
+        // 硬约束：localStorage 里绝不出现 base64 大图，只保留 idb://<fileId>。
+        // 非法来源（老数据/异常 url）直接清空，渲染侧会兜底成「图片已失效」。
+        return url.startsWith(IMAGE_URL_PREFIX) ? part : { ...part, url: '' };
+      }
       if (
         part &&
         part.type === 'dynamic-tool' &&
@@ -166,11 +202,14 @@ export function loadSession(name: string): StoredSession | null {
 // 删除指定页面的历史（清空按钮用）。
 export function clearSession(name: string): void {
   if (!isBrowser()) return;
+  const shape = readShape(storageKey(name));
   try {
     window.localStorage.removeItem(storageKey(name));
   } catch {
     // 隐私模式等场景 localStorage 可能整体不可用：静默忽略。
   }
+  // 整个 key 被清掉 → 关联的图片一并删除
+  if (shape) discardImagesOf(shape.sessions);
 }
 
 // 容量兜底：写入失败（超 5MB 配额）时，从最老的会话开始逐个丢弃后重试。
@@ -186,6 +225,8 @@ function writeWithEviction(k: string, shape: StorageShape): void {
         k,
         JSON.stringify({ version: STORAGE_VERSION, sessions }),
       );
+      // 写入成功 → 被丢弃的会话连带删图
+      if (drop > 0) discardImagesOf(ordered.slice(0, drop));
       return;
     } catch {
       // 配额不足：丢一个最老会话，下一轮再试。
@@ -203,6 +244,8 @@ export function saveSession(name: string, input: SaveSessionInput): void {
     // messages 为空：只删除这一条会话（如果是唯一一条则整个 key 清掉）
     const shape = readShape(k);
     if (!shape || shape.sessions.length === 0) return;
+    const target = shape.sessions.find(s => s.id === input.id);
+    if (target) discardImagesOf([target]);
     if (shape.sessions.length === 1 && shape.sessions[0].id === input.id) {
       clearSession(name);
       return;
@@ -225,9 +268,10 @@ export function saveSession(name: string, input: SaveSessionInput): void {
   // 读旧 shape → 按 id 过滤掉旧版本 → 新会话放到末尾 → 按 updatedAt 倒序 → 截断到 MAX_SESSIONS
   const shape = readShape(k);
   const others = shape ? shape.sessions.filter(s => s.id !== input.id) : [];
-  const merged = [...others, updatedSession]
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, MAX_SESSIONS);
+  const sorted = [...others, updatedSession].sort((a, b) => b.updatedAt - a.updatedAt);
+  const merged = sorted.slice(0, MAX_SESSIONS);
+  // 超出上限被截掉的会话 → 连图一起删，避免孤儿图片堆积
+  if (sorted.length > MAX_SESSIONS) discardImagesOf(sorted.slice(MAX_SESSIONS));
 
   writeWithEviction(k, { version: STORAGE_VERSION, sessions: merged });
 }
@@ -260,6 +304,8 @@ export function loadSessionById(name: string, id: string): StoredSession | null 
 export function deleteSession(name: string, id: string): void {
   const shape = readShape(storageKey(name));
   if (!shape || shape.sessions.length === 0) return;
+  const target = shape.sessions.find(s => s.id === id);
+  if (target) discardImagesOf([target]);
   const filtered = shape.sessions.filter(s => s.id !== id);
   if (filtered.length === 0) {
     clearSession(name);

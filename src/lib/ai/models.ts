@@ -27,5 +27,9 @@ export const zhipu = createOpenAI({
 // glm-4.6：支持 tool calling，Research Agent 的多步工具调用依赖这一点。
 export const DEFAULT_MODEL_ID = 'glm-4.6';
 
+// 图片识别走的视觉模型。纯文本模型收到 image part 会直接 400，必须分流。
+export const VISION_MODEL_ID = 'glm-4.6v';
+
 // 显式走 .chat()（/chat/completions），不要用 zhipu(id) 让它按模型名猜端点。
 export const chatModel = zhipu.chat(DEFAULT_MODEL_ID);
+export const visionModel = zhipu.chat(VISION_MODEL_ID);
